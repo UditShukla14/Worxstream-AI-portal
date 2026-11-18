@@ -1,0 +1,129 @@
+/**
+ * Tasks Tools - MCP Tool Definitions
+ */
+
+import { z } from 'zod';
+import { registerTool } from '../server.js';
+import { callWorxstreamAPI, normalizeFilter } from '../../services/httpClient.js';
+import { getWorxstreamContext } from '../../config/index.js';
+
+export function registerTaskTools() {
+  const filterSchema = z.object({ search: z.string().optional() }).optional();
+
+  // List tasks
+  registerTool(
+    'list_tasks',
+    {
+      title: 'List Tasks',
+      description: 'List tasks. Can filter by object_name, object_id, app_id, and filter.search.',
+      inputSchema: {
+        object_name: z.string().optional().describe('Object name (optional)'),
+        object_id: z.number().optional().describe('Object ID (optional)'),
+        app_id: z.number().optional().describe('App ID (optional)'),
+        limit: z.number().optional().describe('Number of results (default: 25)'),
+        page: z.number().optional().describe('Page number (default: 1)'),
+        filter: filterSchema.describe('Filter object, e.g. { "search": "term" }'),
+      },
+    },
+    async ({ object_name, object_id, app_id, limit = 25, page = 1, filter } = {}) => {
+      const { companyId, userId } = getWorxstreamContext();
+      const result = await callWorxstreamAPI({
+        method: 'POST',
+        endpoint: '/transaction/task/get-tasks',
+        data: {
+          companyId,
+          userId,
+          object_name: object_name || null,
+          object_id: object_id || null,
+          app_id: app_id || null,
+          page: page ?? 1,
+          limit: limit ?? 25,
+          filter: normalizeFilter(filter),
+        },
+      });
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Get task details
+  registerTool(
+    'get_task_details',
+    {
+      title: 'Get Task Details',
+      description: 'Get one task with its assignee, due date, status and linked object. Requires the task ID; find it with list_tasks.',
+      inputSchema: {
+        id: z.number().describe('Task ID'),
+      },
+    },
+    async ({ id }) => {
+      const { companyId, userId } = getWorxstreamContext();
+      const result = await callWorxstreamAPI({
+        method: 'GET',
+        endpoint: '/transaction/task/get-task-details',
+        data: {
+          company_id: companyId,
+          user_id: userId,
+          id,
+        },
+      });
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Create task
+  registerTool(
+    'create_task',
+    {
+      title: 'Create Task',
+      description: 'Create a task, optionally linked to an object and assigned to a team member. This writes data: confirm title, assignee and due date with the user first.',
+      inputSchema: {
+        title: z.string().describe('Task title'),
+        description: z.string().optional().describe('Task description'),
+        issue_type: z.string().optional().describe('Issue type ID'),
+        priority: z.string().optional().describe('Priority ID'),
+        status: z.string().optional().describe('Status ID'),
+        assign_to: z.number().optional().describe('Assign to user ID'),
+        start_date: z.string().optional().describe('Start date (YYYY-MM-DD)'),
+        end_date: z.string().optional().describe('End date (YYYY-MM-DD)'),
+        tags: z.array(z.string()).optional().describe('Tags'),
+        object_name: z.string().optional().describe('Object name'),
+        object_id: z.number().optional().describe('Object ID'),
+        app_id: z.number().optional().describe('App ID'),
+      },
+    },
+    async (input) => {
+      const { companyId, userId } = getWorxstreamContext();
+      const result = await callWorxstreamAPI({
+        method: 'POST',
+        endpoint: '/transaction/task/create-tasks',
+        data: {
+          company_id: companyId,
+          user_id: userId,
+          object_name: input.object_name || null,
+          object_id: input.object_id || null,
+          app_id: input.app_id || null,
+          title: input.title,
+          description: input.description || '',
+          issue_type: input.issue_type || null,
+          priority: input.priority || null,
+          status: input.status || '1',
+          assign_to: input.assign_to || null,
+          start_date: input.start_date || null,
+          end_date: input.end_date || null,
+          tags: Array.isArray(input.tags) ? input.tags : [],
+          is_active: true,
+        },
+      });
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+}

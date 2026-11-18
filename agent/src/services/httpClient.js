@@ -1,0 +1,125 @@
+/**
+ * HTTP Client Service for Worxstream API
+ */
+
+import axios from 'axios';
+import { config } from '../config/index.js';
+
+// Clean base URL - remove trailing slashes
+const baseUrl = config.worxstream.baseUrl.replace(/\/+$/, '');
+
+// Check if baseUrl already ends with /api
+const apiBaseUrl = baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
+
+const httpClient = axios.create({
+  baseURL: apiBaseUrl,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  },
+});
+
+// Request interceptor - add auth token
+httpClient.interceptors.request.use(
+  (requestConfig) => {
+    if (config.worxstream.apiToken) {
+      requestConfig.headers.Authorization = `Bearer ${config.worxstream.apiToken}`;
+    }
+    return requestConfig;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor - normalize responses
+httpClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error.response?.status;
+    const message = error.response?.data?.message || error.message;
+    const url = error.config?.url;
+    console.error(`API Error [${status}] ${url}: ${message}`);
+    if (error.response?.data && process.env.LOG_API_ERROR_BODIES === 'true') {
+      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+    }
+    const wrapped = new Error(message);
+    wrapped.status = status;
+    wrapped.code = error.code;
+    return Promise.reject(wrapped);
+  }
+);
+
+/**
+ * Normalize filter from tool input (LLM may pass JSON string or object).
+ * API expects filter as object e.g. { search: "term" }.
+ */
+export function normalizeFilter(filter) {
+  if (filter == null) return {};
+  if (typeof filter === 'string') {
+    try {
+      const parsed = JSON.parse(filter);
+      return typeof parsed === 'object' && parsed !== null ? parsed : { search: filter };
+    } catch {
+      return { search: filter };
+    }
+  }
+  return typeof filter === 'object' && filter !== null ? filter : {};
+}
+
+const RETRY_STATUSES = new Set([429, 502, 503, 504]);
+const MAX_RETRIES = 2;
+
+/** Retry transient failures (idempotent GETs only — never replay writes). */
+async function requestWithRetry(requestConfig, method) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await httpClient.request(requestConfig);
+    } catch (error) {
+      const status = error.status ?? error.response?.status;
+      const transient = RETRY_STATUSES.has(status) || ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'].includes(error.code);
+      if (method !== 'get' || !transient || attempt >= MAX_RETRIES) throw error;
+      await new Promise((r) => setTimeout(r, 300 * 2 ** attempt));
+    }
+  }
+}
+
+/**
+ * Call Worxstream API
+ * 
+ * For GET requests: data is sent as query params
+ * For POST/PUT/DELETE requests: data is sent as request body
+ */
+export async function callWorxstreamAPI({ method, endpoint, data, params }) {
+  try {
+    const lowerMethod = method.toLowerCase();
+    
+    // For GET requests, send data as query params
+    // For other methods, send data as request body
+    const requestConfig = {
+      method: lowerMethod,
+      url: endpoint,
+    };
+
+    if (lowerMethod === 'get') {
+      // Merge data into params for GET requests
+      requestConfig.params = { ...data, ...params };
+    } else {
+      requestConfig.data = data;
+      requestConfig.params = params;
+    }
+
+    const response = await requestWithRetry(requestConfig, lowerMethod);
+
+    return {
+      success: true,
+      data: response.data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
+export { httpClient };

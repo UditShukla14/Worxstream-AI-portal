@@ -1,0 +1,19 @@
+{
+  "name": "notification-backend",
+  "version": "0.1.0",
+  "description": "Central notification service for Worxstream: ingests events from mail, chat and the AI agent, stores them per company and user, and dispatches them in real time.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/unit/"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "mongoose": "^8.15.1",
+    "socket.io": "^4.8.1"
+  }
+}
