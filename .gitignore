@@ -1,0 +1,6 @@
+/mail-agent-backend/
+node_modules/
+.env
+.DS_Store
+/agent/
+/INFRA.md
