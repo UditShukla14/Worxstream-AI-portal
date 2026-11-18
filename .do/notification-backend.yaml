@@ -1,0 +1,35 @@
+# DigitalOcean App Platform: Worxstream notification backend.
+# Create App > GitHub repo invoicehubplus/Worxstream-AI-portal > or import this spec.
+# Keep instance_count at 1 until the Socket.IO Redis adapter is added (events only reach sockets on the same instance).
+name: worxstream-notifications
+region: nyc
+
+services:
+  - name: notification-backend
+    github:
+      repo: invoicehubplus/Worxstream-AI-portal
+      branch: dev_Udit
+      deploy_on_push: true
+    source_dir: /notification-backend
+    environment_slug: node-js
+    run_command: npm start
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 20
+      period_seconds: 10
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        type: SECRET
+      - key: SERVICE_KEYS
+        type: SECRET
+      - key: WORXSTREAM_API_URL
+        value: https://api.worxstream.ai
+      - key: CORS_ORIGINS
+        value: https://app.worxstream.ai
+      - key: RETENTION_DAYS
+        value: "90"
